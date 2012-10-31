@@ -11,6 +11,18 @@ class Reactor
 
 	def run
 		loop do
+			debugger
+			# Process.fork do
+				server = [].tap do |arrray|
+					@descriptors[:read].each do |item|
+						debugger
+						item[:io].io.class == 'TCPServer'
+						array << item[:io]
+					end
+				end
+				server.accept
+				self.add_item(server, :both)
+			# end
 			read_list = @descriptors[:read].collect {|io| io[:io]}
 			write_list = [].tap do |list|
 				@descriptors[:write].each do |io|
@@ -71,7 +83,7 @@ end
 
 class MyIO < DelegateClass(IO)
 
-	attr_accessor :data
+	attr_accessor :data, :io
 
 	def initialize(io)
 		@io = io
