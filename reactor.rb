@@ -65,16 +65,9 @@ class Reactor
 		# 	puts 'waiting for connection'
 		# 	connection = server.accept
 		# end
-		@child_pids = [] 
-		[:INT, :QUIT].each do |signal|
-			Signal.trap(signal) do
-				@child_pids.each do |pid|
-					Process.kill(signal, pid)
-				end
-			end
-		end
-		Process.fork do
-			@child_pids << Process.pid
+		parent_pid = Process.pid
+		@child_pids = []
+		pid = Process.fork do
 			# server = [].tap do |arrray|
 			# 	@descriptors[:read].each do |item|
 			# 		debugger
@@ -82,10 +75,26 @@ class Reactor
 			# 		array << item[:io]
 			# 	end
 			# end
+			self.trap_signals([parent_pid])
 			loop do
 				server = TCPServer.new(port)
+				puts 'waiting for connection'
 				connection = server.accept
 				self.add_item(connection, :both)
+				# NEED TO USE A SOCKET OR PIPE HERE SO I CAN COMMUNICATE ACROSS PROCESSES
+				# I think it will only work using threads and a queue because you can toss objects on a queue
+			end
+		end
+		@child_pids << pid
+		self.trap_signals(@child_pids)
+	end
+
+	def trap_signals(pids)
+		[:INT, :QUIT].each do |signal|
+			Signal.trap(signal) do
+				pids.each do |pid|
+					Process.kill(signal, pid)
+				end
 			end
 		end
 	end
