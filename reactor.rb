@@ -65,7 +65,16 @@ class Reactor
 		# 	puts 'waiting for connection'
 		# 	connection = server.accept
 		# end
+		@child_pids = [] 
+		[:INT, :QUIT].each do |signal|
+			Signal.trap(signal) do
+				@child_pids.each do |pid|
+					Process.kill(signal, pid)
+				end
+			end
+		end
 		Process.fork do
+			@child_pids << Process.pid
 			# server = [].tap do |arrray|
 			# 	@descriptors[:read].each do |item|
 			# 		debugger
