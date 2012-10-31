@@ -13,9 +13,10 @@ class Reactor
 
 	def run
 		loop do
-			read_list = @descriptors[:read].collect {|io| io[:io]}
+			descriptors = @queue.pop
+			read_list = descriptors[:read].collect {|io| io[:io]}
 			write_list = [].tap do |list|
-				@descriptors[:write].each do |io|
+				descriptors[:write].each do |io|
 					list << io[:io] if io[:io].data
 				end
 			end
@@ -35,7 +36,7 @@ class Reactor
 				end
 			end
 			[:read, :write].each do |mode|
-				@descriptors[mode].each do |io_pair|
+				descriptors[mode].each do |io_pair|
 					@callbacks << io_pair if io_pair[:callback]
 				end
 				@callbacks.each do |io|
@@ -64,27 +65,13 @@ class Reactor
 	end
 
 	def add_server(port)
-		# server = TCPServer.new(port)
-		# self.add_item(server, :both, true) do |server|
-		# 	puts 'waiting for connection'
-		# 	connection = server.accept
-		# end
 		queue = Queue.new
 		Thread.new do
-			# server = [].tap do |arrray|
-			# 	@descriptors[:read].each do |item|
-			# 		debugger
-			# 		item[:io].io.is_a?(TCPSocket)
-			# 		array << item[:io]
-			# 	end
-			# end
 			loop do
 				server = TCPServer.new(port)
 				puts 'waiting for connection'
 				connection = server.accept
 				self.add_item(connection, :both)
-				# NEED TO USE A SOCKET OR PIPE HERE SO I CAN COMMUNICATE ACROSS PROCESSES
-				# I think it will only work using threads and a queue because you can toss objects on a queue
 			end
 		end
 	end
