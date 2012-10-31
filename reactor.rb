@@ -1,12 +1,14 @@
 require 'socket'
 require 'debugger'
 require 'delegate'
+require 'thread'
 
 class Reactor
 
 	def initialize
-		@descriptors = { :read => [], :write => []}
 		@callbacks = []
+		@queue = Queue.new
+		@queue << { :read => [], :write => []}
 	end
 
 	def run
@@ -50,13 +52,15 @@ class Reactor
 		else
 			callback = block
 		end
+		descriptors = @queue.pop
 		if type == :both
 			my_io = MyIO.new(io)
-			@descriptors[:read] << {:io => my_io, :callback => callback}
-			@descriptors[:write] << {:io => my_io, :callback => callback}
+			descriptors[:read] << {:io => my_io, :callback => callback}
+			descriptors[:write] << {:io => my_io, :callback => callback}
 		else
-			@descriptors[type] << {:io => MyIO.new(io), :callback => callback}
+			descriptors[type] << {:io => MyIO.new(io), :callback => callback}
 		end
+		@queue << descriptors
 	end
 
 	def add_server(port)
@@ -65,9 +69,8 @@ class Reactor
 		# 	puts 'waiting for connection'
 		# 	connection = server.accept
 		# end
-		parent_pid = Process.pid
-		@child_pids = []
-		pid = Process.fork do
+		queue = Queue.new
+		Thread.new do
 			# server = [].tap do |arrray|
 			# 	@descriptors[:read].each do |item|
 			# 		debugger
@@ -75,7 +78,6 @@ class Reactor
 			# 		array << item[:io]
 			# 	end
 			# end
-			self.trap_signals([parent_pid])
 			loop do
 				server = TCPServer.new(port)
 				puts 'waiting for connection'
@@ -85,20 +87,7 @@ class Reactor
 				# I think it will only work using threads and a queue because you can toss objects on a queue
 			end
 		end
-		@child_pids << pid
-		self.trap_signals(@child_pids)
 	end
-
-	def trap_signals(pids)
-		[:INT, :QUIT].each do |signal|
-			Signal.trap(signal) do
-				pids.each do |pid|
-					Process.kill(signal, pid)
-				end
-			end
-		end
-	end
-
 end
 
 class MyIO < DelegateClass(IO)
