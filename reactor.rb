@@ -8,19 +8,21 @@ class Reactor
 	def initialize
 		@callbacks = []
 		@queue = Queue.new
-		@queue << { :read => [], :write => []}
+		@descriptors = []
 	end
 
 	def run
 		loop do
-			descriptors = @queue.pop
-			read_list = descriptors[:read].collect {|io| io[:io]}
+			while @queue.size > 0
+				@descriptors << @queue.pop
+			end
+			read_list = @descriptors[:read].collect {|io| io[:io]}
 			write_list = [].tap do |list|
-				descriptors[:write].each do |io|
+				@descriptors[:write].each do |io|
 					list << io[:io] if io[:io].data
 				end
 			end
-			readers, writers = IO.select(read_list, write_list, nil)
+			readers, writers = IO.select(read_list, write_list, nil, 1)
 			if !readers.nil?
 				if !readers.empty?
 					readers.each do |reader|
@@ -36,7 +38,7 @@ class Reactor
 				end
 			end
 			[:read, :write].each do |mode|
-				descriptors[mode].each do |io_pair|
+				@descriptors[mode].each do |io_pair|
 					@callbacks << io_pair if io_pair[:callback]
 				end
 				@callbacks.each do |io|
@@ -47,13 +49,13 @@ class Reactor
 	end
 
 	def add_item(io, type, call_now = false, &block)
+		descriptors = {:read => [], :write => []}
 		if call_now == true
 			callback = nil
 			io = block.call(io)
 		else
 			callback = block
 		end
-		descriptors = @queue.pop
 		if type == :both
 			my_io = MyIO.new(io)
 			descriptors[:read] << {:io => my_io, :callback => callback}
@@ -65,12 +67,12 @@ class Reactor
 	end
 
 	def add_server(port)
-		queue = Queue.new
 		Thread.new do
 			loop do
 				server = TCPServer.new(port)
 				puts 'waiting for connection'
 				connection = server.accept
+				puts 'accepted connection'
 				self.add_item(connection, :both)
 			end
 		end
@@ -89,6 +91,7 @@ class MyIO < DelegateClass(IO)
 
 	def do_read
 		@data = @io.read_nonblock(@length)
+		puts @data
 	end
 
 	def do_write
