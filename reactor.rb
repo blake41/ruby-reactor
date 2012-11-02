@@ -7,19 +7,18 @@ class Reactor
 
 	def initialize
 		@callbacks = []
-		@queue = Queue.new
-		@descriptors = []
+		@mutex = Mutex.new
+		@descriptors = {:read => [], :write => []}
 	end
 
 	def run
 		loop do
-			while @queue.size > 0
-				@descriptors << @queue.pop
-			end
 			read_list = @descriptors[:read].collect {|io| io[:io]}
 			write_list = [].tap do |list|
-				@descriptors[:write].each do |io|
-					list << io[:io] if io[:io].data
+				@mutex.synchronize do	
+					@descriptors[:write].each do |io|
+						list << io[:io] if io[:io].data
+					end
 				end
 			end
 			readers, writers = IO.select(read_list, write_list, nil, 1)
@@ -45,11 +44,11 @@ class Reactor
 					callback.call(io[:io])
 				end
 			end
+			Thread.pass
 		end
 	end
 
 	def add_item(io, type, call_now = false, &block)
-		descriptors = {:read => [], :write => []}
 		if call_now == true
 			callback = nil
 			io = block.call(io)
@@ -58,21 +57,23 @@ class Reactor
 		end
 		if type == :both
 			my_io = MyIO.new(io)
-			descriptors[:read] << {:io => my_io, :callback => callback}
-			descriptors[:write] << {:io => my_io, :callback => callback}
+			@mutex.synchronize do
+				@descriptors[:read] << {:io => my_io, :callback => callback}
+				@descriptors[:write] << {:io => my_io, :callback => callback}
+			end
 		else
-			descriptors[type] << {:io => MyIO.new(io), :callback => callback}
+			@mutex.synchronize do
+				@descriptors[type] << {:io => MyIO.new(io), :callback => callback}
+			end
 		end
-		@queue << descriptors
 	end
 
 	def add_server(port)
 		Thread.new do
+			server = TCPServer.new(port)
 			loop do
-				server = TCPServer.new(port)
 				puts 'waiting for connection'
 				connection = server.accept
-				puts 'accepted connection'
 				self.add_item(connection, :both)
 			end
 		end
@@ -91,7 +92,6 @@ class MyIO < DelegateClass(IO)
 
 	def do_read
 		@data = @io.read_nonblock(@length)
-		puts @data
 	end
 
 	def do_write
