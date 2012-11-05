@@ -91,7 +91,10 @@ class MyIO < DelegateClass(IO)
 	end
 
 	def do_read
-		@data = @io.read_nonblock(@length)
+		begin
+			@data = @io.read_nonblock(@length)
+		rescue EOFError
+		end
 	end
 
 	def do_write
